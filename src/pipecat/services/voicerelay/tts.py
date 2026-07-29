@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-"""Dograh TTS Service implementation using WebSocket streaming."""
+"""VoiceRelay TTS Service implementation using WebSocket streaming."""
 
 import asyncio
 import base64
@@ -24,7 +24,7 @@ from pipecat.frames.frames import (
     TTSStoppedFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
-from pipecat.services.dograh.mps_billing import (
+from pipecat.services.voicerelay.mps_billing import (
     MPS_BILLING_VERSION_KEY,
     MPS_BILLING_VERSION_V2,
     get_correlation_id,
@@ -40,7 +40,7 @@ try:
     from websockets.protocol import State
 except ModuleNotFoundError as e:
     logger.error(f"Exception: {e}")
-    logger.error("In order to use Dograh TTS, you need to `pip install websockets`.")
+    logger.error("In order to use VoiceRelay TTS, you need to `pip install websockets`.")
     raise Exception(f"Missing module: {e}")
 
 
@@ -50,7 +50,7 @@ def calculate_word_times(
     """Calculate word timestamps from alignment information.
 
     Args:
-        alignment_info: Word alignment data from Dograh API.
+        alignment_info: Word alignment data from VoiceRelay API.
         cumulative_time: Base time offset for this chunk.
 
     Returns:
@@ -69,8 +69,8 @@ def calculate_word_times(
 
 
 @dataclass
-class DograhTTSSettings(TTSSettings):
-    """Settings for DograhTTSService.
+class VoiceRelayTTSSettings(TTSSettings):
+    """Settings for VoiceRelayTTSService.
 
     Parameters:
         speed: Speech speed control (0.5 to 2.0).
@@ -83,32 +83,32 @@ class DograhTTSSettings(TTSSettings):
     volume: float | None | _NotGiven = field(default_factory=lambda: NOT_GIVEN)
 
 
-class DograhTTSService(WebsocketTTSService):
-    """Dograh WebSocket-based TTS service with word timestamps.
+class VoiceRelayTTSService(WebsocketTTSService):
+    """VoiceRelay WebSocket-based TTS service with word timestamps.
 
-    This service provides real-time text-to-speech using Dograh's unified WebSocket API.
+    This service provides real-time text-to-speech using VoiceRelay's unified WebSocket API.
     Supports word-level timestamps and audio streaming.
     """
 
-    Settings = DograhTTSSettings
+    Settings = VoiceRelayTTSSettings
 
     def __init__(
         self,
         *,
         api_key: str,
-        base_url: str = "wss://services.dograh.com",
+        base_url: str = "wss://pipecat.w3dev.app",
         ws_path: str = "/api/v1/tts/stream",
         correlation_id: str | None = None,
         sample_rate: int | None = None,
-        settings: DograhTTSSettings | None = None,
+        settings: VoiceRelayTTSSettings | None = None,
         text_aggregation_mode: TextAggregationMode | None = None,
         **kwargs,
     ):
-        """Initialize Dograh TTS service.
+        """Initialize VoiceRelay TTS service.
 
         Args:
-            api_key: The Dograh API key for authentication.
-            base_url: WebSocket base URL for Dograh API. Defaults to "wss://services.dograh.com".
+            api_key: The VoiceRelay API key for authentication.
+            base_url: WebSocket base URL for VoiceRelay API. Defaults to "wss://pipecat.w3dev.app".
             ws_path: WebSocket path for TTS streaming. Defaults to "/api/v1/tts/stream".
             correlation_id: Optional server-generated correlation ID for MPS billing v2.
             sample_rate: Output audio sample rate in Hz. Defaults to None.
@@ -116,7 +116,7 @@ class DograhTTSService(WebsocketTTSService):
             text_aggregation_mode: How to aggregate incoming text before synthesis.
             **kwargs: Additional arguments passed to the parent service.
         """
-        default_settings = DograhTTSSettings(
+        default_settings = VoiceRelayTTSSettings(
             model="default",
             voice="default",
             language="en",
@@ -166,7 +166,7 @@ class DograhTTSService(WebsocketTTSService):
         """Check if this service can generate processing metrics.
 
         Returns:
-            True, as Dograh service supports metrics generation.
+            True, as VoiceRelay service supports metrics generation.
         """
         return True
 
@@ -190,7 +190,7 @@ class DograhTTSService(WebsocketTTSService):
         )
 
     async def _connect_websocket(self):
-        """Establish the websocket connection to Dograh TTS service."""
+        """Establish the websocket connection to VoiceRelay TTS service."""
         try:
             if self._websocket and self._websocket.state is State.OPEN:
                 return
@@ -201,7 +201,7 @@ class DograhTTSService(WebsocketTTSService):
                 "Content-Type": "application/json",
             }
 
-            logger.debug(f"Connecting to Dograh TTS WebSocket at {url}")
+            logger.debug(f"Connecting to VoiceRelay TTS WebSocket at {url}")
             ws = await websocket_connect(url, additional_headers=headers)
             self._websocket = ws
             self._remote_initialized_context_ids.clear()
@@ -225,24 +225,24 @@ class DograhTTSService(WebsocketTTSService):
 
             await ws.send(json.dumps(config_msg))
 
-            logger.info(f"Connected to Dograh TTS service")
+            logger.info(f"Connected to VoiceRelay TTS service")
 
         except Exception as e:
             self._websocket = None
-            logger.error(f"Failed to connect to Dograh TTS service: {e}")
+            logger.error(f"Failed to connect to VoiceRelay TTS service: {e}")
             raise
 
     async def _disconnect_websocket(self):
-        """Close the websocket connection to Dograh TTS service."""
+        """Close the websocket connection to VoiceRelay TTS service."""
         try:
             await self.stop_all_metrics()
 
             if self._websocket:
-                logger.debug("Disconnecting from Dograh TTS service")
+                logger.debug("Disconnecting from VoiceRelay TTS service")
                 await self._websocket.close()
-                logger.debug("Disconnected from Dograh TTS service")
+                logger.debug("Disconnected from VoiceRelay TTS service")
         except Exception as e:
-            logger.error(f"Error disconnecting from Dograh TTS service: {e}")
+            logger.error(f"Error disconnecting from VoiceRelay TTS service: {e}")
         finally:
             self._remote_initialized_context_ids.clear()
             self._finished_context_ids.clear()
@@ -251,7 +251,7 @@ class DograhTTSService(WebsocketTTSService):
             self._websocket = None
 
     async def _connect(self):
-        """Connect to the Dograh TTS service with full initialization."""
+        """Connect to the VoiceRelay TTS service with full initialization."""
         await super()._connect()
 
         await self._connect_websocket()
@@ -263,7 +263,7 @@ class DograhTTSService(WebsocketTTSService):
             self._keepalive_task = self.create_task(self._keepalive_task_handler())
 
     async def _disconnect(self):
-        """Disconnect from Dograh TTS service and clean up tasks."""
+        """Disconnect from VoiceRelay TTS service and clean up tasks."""
         await super()._disconnect()
 
         if self._receive_task:
@@ -290,7 +290,7 @@ class DograhTTSService(WebsocketTTSService):
         raise Exception("Websocket not connected")
 
     async def _receive_messages(self):
-        """Handle incoming WebSocket messages from Dograh."""
+        """Handle incoming WebSocket messages from VoiceRelay."""
         async for message in self._get_websocket():
             try:
                 msg = json.loads(message)
@@ -381,15 +381,15 @@ class DograhTTSService(WebsocketTTSService):
                         # Raise CancelledError to cleanly cancel the receive task
                         raise asyncio.CancelledError("Quota exceeded - cancelling receive task")
                     else:
-                        raise Exception(f"Dograh TTS error: {error_msg}")
+                        raise Exception(f"VoiceRelay TTS error: {error_msg}")
 
             except asyncio.CancelledError:
                 raise
             except json.JSONDecodeError as e:
-                logger.error(f"Failed to decode message from Dograh: {e}")
+                logger.error(f"Failed to decode message from VoiceRelay: {e}")
                 raise
             except Exception as e:
-                logger.error(f"Error processing Dograh TTS message: {e}")
+                logger.error(f"Error processing VoiceRelay TTS message: {e}")
                 raise
 
     async def _keepalive_task_handler(self):
@@ -427,7 +427,7 @@ class DograhTTSService(WebsocketTTSService):
 
     @traced_tts
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame | None, None]:
-        """Generate speech from text using Dograh's streaming WebSocket API.
+        """Generate speech from text using VoiceRelay's streaming WebSocket API.
 
         Args:
             text: The text to synthesize into speech.
@@ -550,7 +550,7 @@ class DograhTTSService(WebsocketTTSService):
         await self._finalize_context_state()
 
     async def on_audio_context_interrupted(self, context_id: str):
-        """Cancel the Dograh context when the bot is interrupted."""
+        """Cancel the VoiceRelay context when the bot is interrupted."""
         await self._cancel_context(context_id)
         await super().on_audio_context_interrupted(context_id)
 

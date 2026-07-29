@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-"""Dograh STT Service implementation using WebSocket streaming."""
+"""VoiceRelay STT Service implementation using WebSocket streaming."""
 
 import asyncio
 import json
@@ -28,13 +28,13 @@ from pipecat.frames.frames import (
     VADUserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
-from pipecat.services.dograh.mps_billing import (
+from pipecat.services.voicerelay.mps_billing import (
     MPS_BILLING_VERSION_KEY,
     MPS_BILLING_VERSION_V2,
     get_correlation_id,
 )
 from pipecat.services.settings import STTSettings
-from pipecat.services.stt_latency import DOGRAH_TTFS_P99
+from pipecat.services.stt_latency import VOICERELAY_TTFS_P99
 from pipecat.services.stt_service import STTService
 from pipecat.services.websocket_service import WebsocketService
 from pipecat.transcriptions.language import Language
@@ -53,41 +53,41 @@ except ModuleNotFoundError as e:
 
 
 @dataclass
-class DograhSTTSettings(STTSettings):
-    """Settings for DograhSTTService."""
+class VoiceRelaySTTSettings(STTSettings):
+    """Settings for VoiceRelaySTTService."""
 
     pass
 
 
-class DograhSTTService(STTService, WebsocketService):
-    """Dograh speech-to-text service using WebSocket streaming.
+class VoiceRelaySTTService(STTService, WebsocketService):
+    """VoiceRelay speech-to-text service using WebSocket streaming.
 
-    This service provides real-time speech recognition using Dograh's unified WebSocket API.
+    This service provides real-time speech recognition using VoiceRelay's unified WebSocket API.
     Supports streaming transcription, interim results, and VAD events.
     """
 
-    Settings = DograhSTTSettings
+    Settings = VoiceRelaySTTSettings
 
     def __init__(
         self,
         *,
         api_key: str,
-        base_url: str = "wss://services.dograh.com",
+        base_url: str = "wss://pipecat.w3dev.app",
         ws_path: str = "/api/v1/stt/stream",
         correlation_id: str | None = None,
         sample_rate: int | None = None,
         interim_results: bool = True,
         vad_events: bool = False,
         keyterms: list[str] | None = None,
-        settings: DograhSTTSettings | None = None,
-        ttfs_p99_latency: float | None = DOGRAH_TTFS_P99,
+        settings: VoiceRelaySTTSettings | None = None,
+        ttfs_p99_latency: float | None = VOICERELAY_TTFS_P99,
         **kwargs,
     ):
         """Initialize STT service.
 
         Args:
-            api_key: The Dograh API key for authentication.
-            base_url: WebSocket base URL for Dograh API. Defaults to "wss://services.dograh.com".
+            api_key: The VoiceRelay API key for authentication.
+            base_url: WebSocket base URL for VoiceRelay API. Defaults to "wss://pipecat.w3dev.app".
             ws_path: WebSocket path for STT streaming. Defaults to "/api/v1/stt/stream".
             correlation_id: Optional server-generated correlation ID for MPS billing v2.
             sample_rate: Audio sample rate in Hz. Defaults to None.
@@ -99,7 +99,7 @@ class DograhSTTService(STTService, WebsocketService):
                 Override for your deployment. See https://github.com/pipecat-ai/stt-benchmark
             **kwargs: Additional arguments passed to the parent services.
         """
-        default_settings = DograhSTTSettings(model="default", language="multi")
+        default_settings = VoiceRelaySTTSettings(model="default", language="multi")
         if settings is not None:
             default_settings.apply_update(settings)
 
@@ -142,7 +142,7 @@ class DograhSTTService(STTService, WebsocketService):
         return self._vad_events
 
     def service_metadata_frame(self) -> STTMetadataFrame:
-        """Recommend external turn strategies when Dograh emits VAD events."""
+        """Recommend external turn strategies when VoiceRelay emits VAD events."""
         frame = super().service_metadata_frame()
         if self._vad_events:
             frame.user_turn_strategies = ExternalUserTurnStrategies()
@@ -256,7 +256,7 @@ class DograhSTTService(STTService, WebsocketService):
         await self.push_frame(frame, FrameDirection.UPSTREAM)
 
     async def _receive_messages(self):
-        """Handle incoming WebSocket messages from Dograh."""
+        """Handle incoming WebSocket messages from VoiceRelay."""
         # If websocket was closed (e.g., due to quota exceeded), just return
         if not self._websocket:
             return
@@ -325,7 +325,7 @@ class DograhSTTService(STTService, WebsocketService):
             except asyncio.CancelledError:
                 raise
             except json.JSONDecodeError as e:
-                logger.error(f"Failed to decode message from Dograh: {e}")
+                logger.error(f"Failed to decode message from VoiceRelay: {e}")
                 raise
             except Exception as e:
                 logger.error(f"Error processing STT message: {e}")
@@ -355,14 +355,14 @@ class DograhSTTService(STTService, WebsocketService):
         pass
 
     async def _send_finalize(self):
-        """Send finalize message to Dograh server to flush the current transcript."""
+        """Send finalize message to VoiceRelay server to flush the current transcript."""
         if self._websocket and self._websocket.state == State.OPEN:
             finalize_msg = json.dumps({"type": "finalize"})
             await self._websocket.send(finalize_msg)
             logger.trace("Sent finalize to STT server")
 
     async def _handle_transcription(self, msg: dict):
-        """Process transcription message from Dograh."""
+        """Process transcription message from VoiceRelay."""
         transcript = msg.get("text", "")
         is_final = msg.get("is_final", False)
         from_finalize = msg.get("from_finalize", False)
@@ -455,13 +455,13 @@ class DograhSTTService(STTService, WebsocketService):
         self._session_start_time = None
 
     async def cleanup(self):
-        """Release Dograh STT resources on every pipeline teardown path."""
+        """Release VoiceRelay STT resources on every pipeline teardown path."""
         await super().cleanup()
         await self._disconnect()
         self._session_start_time = None
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
-        """Process frames with Dograh-specific handling.
+        """Process frames with VoiceRelay-specific handling.
 
         Args:
             frame: The frame to process.
@@ -470,14 +470,14 @@ class DograhSTTService(STTService, WebsocketService):
         await super().process_frame(frame, direction)
 
         if isinstance(frame, VADUserStoppedSpeakingFrame):
-            # Send finalize to flush the current transcript from Deepgram (via Dograh server)
+            # Send finalize to flush the current transcript from Deepgram (via VoiceRelay server)
             if self._websocket and self._websocket.state == State.OPEN:
                 self.request_finalize()
                 await self._send_finalize()
                 logger.trace(f"Triggered finalize event on: {frame.name=}, {direction=}")
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:
-        """Send audio data to Dograh for transcription.
+        """Send audio data to VoiceRelay for transcription.
 
         Args:
             audio: Raw audio bytes to transcribe.

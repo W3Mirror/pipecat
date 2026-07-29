@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-"""Dograh Flux STT service: Deepgram Flux turn detection proxied via the Dograh MPS."""
+"""VoiceRelay Flux STT service: Deepgram Flux turn detection proxied via the VoiceRelay MPS."""
 
 import json
 import time
@@ -25,7 +25,7 @@ from pipecat.services.deepgram.flux.base import (
     DeepgramFluxSTTBase,
     DeepgramFluxSTTSettings,
 )
-from pipecat.services.dograh.mps_billing import (
+from pipecat.services.voicerelay.mps_billing import (
     MPS_BILLING_VERSION_KEY,
     MPS_BILLING_VERSION_V2,
     get_correlation_id,
@@ -33,18 +33,18 @@ from pipecat.services.dograh.mps_billing import (
 from pipecat.services.websocket_service import WebsocketService
 
 __all__ = [
-    "DograhFluxSTTService",
+    "VoiceRelayFluxSTTService",
     "DeepgramFluxSTTSettings",
 ]
 
 
-class DograhFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
-    """Dograh Flux speech-to-text service.
+class VoiceRelayFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
+    """VoiceRelay Flux speech-to-text service.
 
-    Provides Deepgram Flux turn detection through the Dograh managed model
+    Provides Deepgram Flux turn detection through the VoiceRelay managed model
     services (MPS) proxy. All Flux protocol handling (turn detection, metrics,
     settings) is inherited from ``DeepgramFluxSTTBase``; this class only
-    implements the transport: a WebSocket to the Dograh MPS Flux endpoint with
+    implements the transport: a WebSocket to the VoiceRelay MPS Flux endpoint with
     Bearer auth and MPS billing/correlation carried in the query string. The
     proxy forwards native Flux messages, so the inherited message handling
     applies unchanged.
@@ -70,7 +70,7 @@ class DograhFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
         self,
         *,
         api_key: str,
-        base_url: str = "wss://services.dograh.com",
+        base_url: str = "wss://pipecat.w3dev.app",
         ws_path: str = "/api/v1/stt/flux",
         correlation_id: str | None = None,
         sample_rate: int | None = None,
@@ -82,12 +82,12 @@ class DograhFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
         settings: Settings | None = None,
         **kwargs,
     ):
-        """Initialize the Dograh Flux STT service.
+        """Initialize the VoiceRelay Flux STT service.
 
         Args:
-            api_key: Dograh API key for authentication (sent as a Bearer token).
-            base_url: WebSocket base URL for the Dograh MPS. Defaults to
-                "wss://services.dograh.com".
+            api_key: VoiceRelay API key for authentication (sent as a Bearer token).
+            base_url: WebSocket base URL for the VoiceRelay MPS. Defaults to
+                "wss://pipecat.w3dev.app".
             ws_path: WebSocket path for the Flux STT endpoint. Defaults to
                 "/api/v1/stt/flux".
             correlation_id: Optional server-generated correlation ID for MPS
@@ -158,7 +158,7 @@ class DograhFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
             start_metadata=self._start_metadata,
         )
 
-    def _build_dograh_query_string(self) -> str:
+    def _build_voicerelay_query_string(self) -> str:
         """Append MPS billing/correlation params to the inherited Flux query."""
         query = self._build_query_string()
         correlation_id = self._get_correlation_id()
@@ -202,7 +202,7 @@ class DograhFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
     async def _connect(self):
         """Build the MPS Flux URL and open the WebSocket connection."""
         await super()._connect()
-        self._websocket_url = f"{self._base_url}{self._ws_path}?{self._build_dograh_query_string()}"
+        self._websocket_url = f"{self._base_url}{self._ws_path}?{self._build_voicerelay_query_string()}"
         await self._connect_websocket()
 
     async def _disconnect(self):
@@ -217,7 +217,7 @@ class DograhFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
             self._websocket = None
 
     async def _connect_websocket(self):
-        """Establish the WebSocket connection to the Dograh MPS Flux endpoint."""
+        """Establish the WebSocket connection to the VoiceRelay MPS Flux endpoint."""
         try:
             if self._websocket and self._websocket.state is State.OPEN:
                 return
@@ -241,7 +241,7 @@ class DograhFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
 
             logger.debug("WebSocket connected, waiting for server confirmation...")
             await self._connection_established_event.wait()
-            logger.debug("Connected to Dograh Flux WebSocket")
+            logger.debug("Connected to VoiceRelay Flux WebSocket")
             await self._call_event_handler("on_connected")
         except Exception as e:
             await self.push_error(error_msg=f"Unknown error occurred: {e}", exception=e)
@@ -264,7 +264,7 @@ class DograhFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
 
             if self._websocket:
                 await self._send_close_stream()
-                logger.debug("Disconnecting from Dograh Flux WebSocket")
+                logger.debug("Disconnecting from VoiceRelay Flux WebSocket")
                 await self._websocket.close()
         except Exception as e:
             await self.push_error(error_msg=f"Error closing websocket: {e}", exception=e)
@@ -277,7 +277,7 @@ class DograhFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
     # ------------------------------------------------------------------
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:
-        """Send audio data to the Dograh MPS for Flux transcription.
+        """Send audio data to the VoiceRelay MPS for Flux transcription.
 
         Args:
             audio: Raw audio bytes in linear16 format.
@@ -307,7 +307,7 @@ class DograhFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
         """Receive messages from the proxy and dispatch them.
 
         Native Flux messages (capitalized ``type`` values) are handled by the
-        base. The Dograh proxy injects its own control messages with a
+        base. The VoiceRelay proxy injects its own control messages with a
         lowercase ``"error"`` type for billing/quota conditions, handled here.
         """
         async for message in self._get_websocket():
@@ -333,7 +333,7 @@ class DograhFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
                 raise
 
     async def _handle_proxy_error(self, data: dict):
-        """Handle a Dograh proxy control error (e.g. quota exceeded)."""
+        """Handle a VoiceRelay proxy control error (e.g. quota exceeded)."""
         error_msg = data.get("error") or data.get("message", "Unknown error")
         is_quota_error = "quota" in error_msg.lower()
 

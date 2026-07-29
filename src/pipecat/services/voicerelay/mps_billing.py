@@ -1,4 +1,4 @@
-"""Helpers for attaching MPS billing metadata to Dograh service requests."""
+"""Helpers for attaching MPS billing metadata to VoiceRelay service requests."""
 
 from collections.abc import Mapping
 from typing import Any
