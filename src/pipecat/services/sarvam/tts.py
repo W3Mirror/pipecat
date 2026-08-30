@@ -48,7 +48,6 @@ from typing import Any, ClassVar
 import aiohttp
 from loguru import logger
 from pydantic import BaseModel, Field
-from websockets.asyncio.client import connect as websocket_connect
 from websockets.protocol import State
 
 from pipecat.frames.frames import (
@@ -63,7 +62,40 @@ from pipecat.services.settings import NOT_GIVEN, TTSSettings, _NotGiven, assert_
 from pipecat.services.tts_service import InterruptibleTTSService, TextAggregationMode, TTSService
 from pipecat.transcriptions.language import Language, resolve_language
 from pipecat.utils.deprecation import deprecated
+from pipecat.utils.text.base_text_filter import BaseTextFilter
 from pipecat.utils.tracing.service_decorators import traced_tts
+
+
+class _SpeakableTextFilter(BaseTextFilter):
+    """Drops fragments Sarvam rejects for carrying no target-language characters.
+
+    Sarvam answers ``400 Text must contain at least one character from the
+    allowed languages`` when a request holds only punctuation or symbols.
+    Sentence aggregation strands such fragments as requests of their own — a
+    doubled full stop leaves a lone ``.`` behind — and the rejected request
+    costs that turn a piece of its audio.
+
+    Emptying the text lets the existing empty-text gate in
+    :class:`~pipecat.services.tts_service.TTSService` drop it before a TTS
+    context is opened. That ordering matters: the websocket service pauses frame
+    processing until audio arrives, so a request that can only fail would stall
+    the turn until the pause watchdog gave up.
+
+    ``str.isalnum`` is true for letters and digits in every script, so Devanagari
+    and Latin pass alike and only punctuation, symbols and emoji are removed —
+    none of which carry sound on their own.
+    """
+
+    async def filter(self, text: str) -> str:
+        """Return the text unchanged, or empty when nothing in it can be voiced.
+
+        Args:
+            text: The candidate text.
+
+        Returns:
+            The original text, or an empty string when it holds no letter or digit.
+        """
+        return text if any(character.isalnum() for character in text) else ""
 
 
 class SarvamTTSModel(StrEnum):
@@ -540,6 +572,9 @@ class SarvamHttpTTSService(TTSService):
             **kwargs,
         )
 
+        # Runs after any caller-supplied filter so it judges the final text.
+        self._text_filters = [*self._text_filters, _SpeakableTextFilter()]
+
         self._api_key = api_key
         self._base_url = base_url
         self._session = aiohttp_session
@@ -582,8 +617,6 @@ class SarvamHttpTTSService(TTSService):
         Yields:
             Frame: Audio frames containing the synthesized speech.
         """
-        logger.debug(f"{self}: Generating TTS [{text}]")
-
         try:
             # Build payload with common parameters
             payload = {
@@ -972,6 +1005,9 @@ class SarvamTTSService(InterruptibleTTSService):
             **kwargs,
         )
 
+        # Runs after any caller-supplied filter so it judges the final text.
+        self._text_filters = [*self._text_filters, _SpeakableTextFilter()]
+
         # Init-only audio format fields (not runtime-updatable)
         self._speech_sample_rate = str(sample_rate)
         self._output_audio_codec = output_audio_codec
@@ -1073,7 +1109,7 @@ class SarvamTTSService(InterruptibleTTSService):
                 "api-subscription-key": self._api_key,
             }
 
-            self._websocket = await websocket_connect(
+            self._websocket = await self._websocket_connect(
                 self._websocket_url,
                 additional_headers=ws_additional_headers,
                 user_agent_header=sdk_headers()["User-Agent"],
@@ -1213,8 +1249,6 @@ class SarvamTTSService(InterruptibleTTSService):
         Yields:
             Frame objects including TTSStartedFrame, TTSAudioRawFrame(s, context_id=context_id), or TTSStoppedFrame.
         """
-        logger.debug(f"Generating TTS: [{text}]")
-
         try:
             if not self._websocket or self._websocket.state is State.CLOSED:
                 await self._connect()

@@ -12,7 +12,6 @@ from collections.abc import AsyncGenerator
 from urllib.parse import urlencode
 
 from loguru import logger
-from websockets.asyncio.client import connect as websocket_connect
 from websockets.protocol import State
 
 from pipecat.frames.frames import (
@@ -115,6 +114,7 @@ class VoiceRelayFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
             keyterm=[],
             min_confidence=None,
             language_hints=None,
+            numerals=None,
         )
         if settings is not None:
             default_settings.apply_update(settings)
@@ -225,7 +225,7 @@ class VoiceRelayFluxSTTService(DeepgramFluxSTTBase, WebsocketService):
             self._connection_established_event.clear()
             self._user_is_speaking = False
             assert self._websocket_url is not None
-            websocket = await websocket_connect(
+            websocket = await self._websocket_connect(
                 self._websocket_url,
                 additional_headers={"Authorization": f"Bearer {self._api_key}"},
             )

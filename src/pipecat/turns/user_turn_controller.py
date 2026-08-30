@@ -169,11 +169,9 @@ class UserTurnController(BaseObject):
         self._user_speaking = False
         self._user_turn_stop_timeout_event.set()
 
-        # Clear any partially accumulated start-strategy state so the next
-        # turn begins from a clean slate after a semantic stop.
-        for s in self._user_turn_strategies.start or []:
-            await s.reset()
-
+        # _trigger_user_turn_stop notifies every strategy (start strategies
+        # included) via handle_user_turn_stopped, so partially accumulated
+        # start-strategy state is cleared there.
         await self._trigger_user_turn_stop(
             None, UserTurnStoppedParams(enable_user_speaking_frames=enable_user_speaking_frames)
         )
@@ -319,13 +317,14 @@ class UserTurnController(BaseObject):
         self._user_turn = True
         self._user_turn_stop_timeout_event.set()
 
-        # Reset all user turn start strategies to start fresh.
+        # Notify every strategy that the turn has started. Start strategies
+        # ready themselves for the next detection; stop strategies arm to detect
+        # this turn's end. A strategy resets whatever per-turn state it keeps
+        # inside its own handle_user_turn_started.
         for s in self._user_turn_strategies.start or []:
-            await s.reset()
-
-        # Reset all user turn stop strategies to start fresh for the new turn.
+            await s.handle_user_turn_started()
         for s in self._user_turn_strategies.stop or []:
-            await s.reset()
+            await s.handle_user_turn_started()
 
         await self._call_event_handler("on_user_turn_started", strategy, params)
 
@@ -369,9 +368,15 @@ class UserTurnController(BaseObject):
         self._user_turn = False
         self._user_turn_stop_timeout_event.set()
 
-        # Reset all user turn stop strategies to start fresh.
+        # Notify every strategy that the turn has ended. Stop strategies reset
+        # (and, e.g., drop a turn analyzer's buffered speech that must not
+        # survive an externally-ended turn). Start strategies get the same
+        # callback, but it's a no-op by default: their reset is turn-start
+        # semantic, so resetting them here would be wrong.
+        for s in self._user_turn_strategies.start or []:
+            await s.handle_user_turn_stopped()
         for s in self._user_turn_strategies.stop or []:
-            await s.reset()
+            await s.handle_user_turn_stopped()
 
         await self._call_event_handler("on_user_turn_stopped", strategy, params)
 
